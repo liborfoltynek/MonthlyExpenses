@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Měsíční výdaje</string>
+    <string name="url_data">http://fotolibb.com/libb/mesicni-platby/m.php?getdata=1</string>
+</resources>
