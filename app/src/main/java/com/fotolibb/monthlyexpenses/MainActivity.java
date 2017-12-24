@@ -1,12 +1,20 @@
 package com.fotolibb.monthlyexpenses;
 
+import android.Manifest;
+import android.content.ContentUris;
+import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.net.Uri;
 import android.os.Bundle;
+import android.provider.CalendarContract;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.EditText;
 import android.widget.ListAdapter;
 import android.widget.ListView;
 import android.widget.SeekBar;
@@ -18,8 +26,9 @@ import java.util.Calendar;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
-    private int  paymentDay = 10;
+    private int paymentDay = 10;
     private List<Record> resultData = null;
+
     public static void setListViewHeightBasedOnChildren(ListView listView) {
         ListAdapter listAdapter = listView.getAdapter();
         if (listAdapter == null) {
@@ -44,10 +53,12 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        askAll();
+
         final TextView et = findViewById(R.id.editText);
         final SeekBar sk = findViewById(R.id.seekBar);
         et.setText("10");
-        et.setLeft(40+(sk.getWidth()) * 9 / 10);
+        et.setLeft(40 + (sk.getWidth()) * 9 / 10);
 
         sk.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
 
@@ -58,7 +69,7 @@ public class MainActivity extends AppCompatActivity {
                 paymentDay = progress;
                 if (null != resultData) {
                     ProcessData(resultData);
-                    et.setLeft(40+(sk.getWidth()) * progress / 10);
+                    et.setLeft(40 + (sk.getWidth()) * progress / 10);
                 }
             }
 
@@ -70,7 +81,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 // TODO Auto-generated method stub
-                et.setLeft(40+(sk.getWidth()) * progress / 10);
+                et.setLeft(40 + (sk.getWidth()) * progress / 10);
                 et.setText(Integer.toString(progress + 1));
             }
         });
@@ -78,10 +89,90 @@ public class MainActivity extends AppCompatActivity {
         showData();
     }
 
-    private void showData()
-    {
+    private void askAll() {
+        askRights(Manifest.permission.READ_CALENDAR);
+        askRights(Manifest.permission.WRITE_CALENDAR);
+    }
+
+    private void askRights(String r) {
+        if (ContextCompat.checkSelfPermission(this, r) != PackageManager.PERMISSION_GRANTED) {
+            if (ActivityCompat.shouldShowRequestPermissionRationale(this, r)) {
+            } else {
+                ActivityCompat.requestPermissions(this, new String[]{r}, 5554);
+            }
+        }
+    }
+
+    private void showData() {
         String url = getResources().getString(R.string.url_data);
         new RecordDownloaderAsync(url, this).execute();
+    }
+
+    private int getOccurences() {
+        Calendar cNow = Calendar.getInstance();
+
+        Calendar cFrom = Calendar.getInstance();
+        if (cNow.get(Calendar.DAY_OF_MONTH) < paymentDay) {
+            cFrom.add(Calendar.MONTH, -1);
+        }
+        cFrom.set(Calendar.DAY_OF_MONTH, 1);
+        cFrom.set(Calendar.HOUR_OF_DAY, 0);
+        cFrom.set(Calendar.MINUTE, 0);
+        cFrom.set(Calendar.SECOND, 0);
+
+        Calendar cTo = Calendar.getInstance();
+        if (cNow.get(Calendar.DAY_OF_MONTH) < paymentDay) {
+            cTo.add(Calendar.MONTH, -1);
+        }
+        cTo.set(Calendar.DAY_OF_MONTH, cFrom.getActualMaximum(Calendar.DAY_OF_MONTH));
+        cTo.set(Calendar.HOUR_OF_DAY, 23);
+        cTo.set(Calendar.MINUTE, 59);
+        cTo.set(Calendar.SECOND, 59);
+
+        Log.i("CAL", "FROM: " + cFrom.getTime().toString());
+        Log.i("CAL", "TO: " + cTo.getTime().toString());
+
+        Uri.Builder eventsUriBuilder = CalendarContract.Instances.CONTENT_URI.buildUpon();
+        ContentUris.appendId(eventsUriBuilder, Long.MIN_VALUE);
+        ContentUris.appendId(eventsUriBuilder, Long.MAX_VALUE);
+
+        Uri eventsUri = eventsUriBuilder.build();
+        Cursor cursor = getContentResolver().query(
+                eventsUri,
+                new String[]{CalendarContract.Instances.CALENDAR_ID, CalendarContract.Instances.TITLE,
+                        CalendarContract.Instances.DESCRIPTION, CalendarContract.Instances.BEGIN,
+                        CalendarContract.Instances.END, CalendarContract.Instances.EVENT_LOCATION,
+                        CalendarContract.Instances.EVENT_ID},
+                CalendarContract.Instances.BEGIN + " >= " + cFrom.getTimeInMillis() + " and " + CalendarContract.Instances.BEGIN
+                        + " <= " + cTo.getTimeInMillis() + " and " + CalendarContract.Instances.VISIBLE + " = 1" + " and " + CalendarContract.Instances.TITLE + " like 'Posilovna%'",
+                null,
+                CalendarContract.Instances.BEGIN + " ASC");
+
+        int cnt = 0;
+        return cursor.getCount();
+        /*
+        Log.i("CAL", "Count: " + cc);
+        if (cursor.moveToFirst()) {
+            do {
+                cnt += 1;
+
+                String title = cursor.getString(1);
+                String desc = cursor.getString(2);
+                long begin = cursor.getLong(3);
+
+                Calendar c = Calendar.getInstance();
+                c.setTimeInMillis(begin);
+
+                int d = c.get(Calendar.DAY_OF_MONTH);
+                int mm = c.get(Calendar.MONTH) + 1;
+
+                Log.i("CAL", String.format("%d: [%d/%d] %s - %s", cnt, mm, d, title, desc, c.toString()));
+
+
+            } while (cursor.moveToNext());
+        }
+        return cnt;
+        */
     }
 
     public void ProcessData(List<Record> result) {
@@ -110,6 +201,19 @@ public class MainActivity extends AppCompatActivity {
                     || ((today <= paymentDay) && (zaznam.day <= paymentDay) && (zaznam.day > today))
                     || ((today > paymentDay) && (zaznam.day <= paymentDay))
                     ) {
+                if (zaznam.popis.equals("posilovna")) {
+                    int repeats = getOccurences();
+                    zaznam.amount = 350 * repeats;
+
+                    String[] mesice = getResources().getStringArray(R.array.mesice);
+                    Calendar cc = Calendar.getInstance();
+
+                    if (cc.get(Calendar.DAY_OF_MONTH) < paymentDay) {
+                        cc.add(Calendar.MONTH, -1);
+                    }
+
+                    zaznam.popis += String.format(" (%s: %dx)", mesice[cc.get(Calendar.MONTH)], repeats);
+                }
                 suma += zaznam.amount;
                 active = true;
             }

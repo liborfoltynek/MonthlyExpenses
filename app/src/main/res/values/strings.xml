@@ -1,4 +1,18 @@
 <resources>
     <string name="app_name">Měsíční výdaje</string>
     <string name="url_data">http://fotolibb.com/libb/mesicni-platby/m.php?getdata=1</string>
+    <string-array name="mesice">
+        <item>Leden</item>
+        <item>Únor</item>
+        <item>Březen</item>
+        <item>Duben</item>
+        <item>Květen</item>
+        <item>Červen</item>
+        <item>Červenec</item>
+        <item>Srpen</item>
+        <item>Září</item>
+        <item>Říjen</item>
+        <item>Listopad</item>
+        <item>Prosinec</item>
+    </string-array>
 </resources>
