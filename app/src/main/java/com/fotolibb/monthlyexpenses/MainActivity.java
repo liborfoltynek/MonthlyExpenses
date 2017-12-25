@@ -144,7 +144,7 @@ public class MainActivity extends AppCompatActivity {
                         CalendarContract.Instances.END, CalendarContract.Instances.EVENT_LOCATION,
                         CalendarContract.Instances.EVENT_ID},
                 CalendarContract.Instances.BEGIN + " >= " + cFrom.getTimeInMillis() + " and " + CalendarContract.Instances.BEGIN
-                        + " <= " + cTo.getTimeInMillis() + " and " + CalendarContract.Instances.VISIBLE + " = 1" + " and " + CalendarContract.Instances.TITLE + " like 'Posilovna%'",
+                        + " <= " + cTo.getTimeInMillis() + " and " + CalendarContract.Instances.VISIBLE + " = 1" + " and " + CalendarContract.Instances.TITLE + " like '%Posilovna%'",
                 null,
                 CalendarContract.Instances.BEGIN + " ASC");
 
