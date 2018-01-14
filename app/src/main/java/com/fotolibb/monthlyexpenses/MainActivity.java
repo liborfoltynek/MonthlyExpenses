@@ -2,13 +2,17 @@ package com.fotolibb.monthlyexpenses;
 
 import android.Manifest;
 import android.content.ContentUris;
+import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.provider.CalendarContract;
+import android.support.design.widget.FloatingActionButton;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
@@ -22,12 +26,19 @@ import android.widget.TableLayout;
 import android.widget.TableRow;
 import android.widget.TextView;
 
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 
+import static com.fotolibb.monthlyexpenses.SettingsActivity.PREFS_KEY_CALENDAR_ID;
+import static com.fotolibb.monthlyexpenses.SettingsActivity.PREFS_KEY_CALENDAR_NAME;
+
 public class MainActivity extends AppCompatActivity {
     private int paymentDay = 10;
+
+    private String TAG = "CALLOG";
     private List<Record> resultData = null;
+    private boolean initialized = false;
 
     public static void setListViewHeightBasedOnChildren(ListView listView) {
         ListAdapter listAdapter = listView.getAdapter();
@@ -53,12 +64,21 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        askAll();
+
 
         final TextView et = findViewById(R.id.editText);
         final SeekBar sk = findViewById(R.id.seekBar);
         et.setText("10");
         et.setLeft(40 + (sk.getWidth()) * 9 / 10);
+
+        FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
+        fab.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                Intent i = new Intent(getApplicationContext(), SettingsActivity.class);
+                startActivity(i);
+            }
+        });
 
         sk.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
 
@@ -86,26 +106,114 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        showData();
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR}, 5554);
+        } else {
+            initialized = true;
+            showData();
+        }
     }
 
-    private void askAll() {
-        askRights(Manifest.permission.READ_CALENDAR);
-        askRights(Manifest.permission.WRITE_CALENDAR);
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (initialized)
+            showData();
     }
 
-    private void askRights(String r) {
-        if (ContextCompat.checkSelfPermission(this, r) != PackageManager.PERMISSION_GRANTED) {
-            if (ActivityCompat.shouldShowRequestPermissionRationale(this, r)) {
-            } else {
-                ActivityCompat.requestPermissions(this, new String[]{r}, 5554);
+    @Override
+    public void onRequestPermissionsResult(int requestCode,
+                                           String permissions[], int[] grantResults) {
+        switch (requestCode) {
+            case 5554: {
+                // If request is cancelled, the result arrays are empty.
+                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    initialized = true;
+                    showData();
+                } else {
+                    // permission denied, boo! Disable the
+                    // functionality that depends on this permission.
+
+                }
+                return;
             }
         }
     }
 
+
     private void showData() {
-        String url = getResources().getString(R.string.url_data);
-        new RecordDownloaderAsync(url, this).execute();
+        //String url = getResources().getString(R.string.url_data);
+        //new RecordDownloaderAsync(url, this).execute();
+
+        SharedPreferences mPrefs = PreferenceManager.getDefaultSharedPreferences(this);
+        String calendarName = mPrefs.getString(PREFS_KEY_CALENDAR_NAME, "");
+        long calendarId = mPrefs.getLong(PREFS_KEY_CALENDAR_ID, -1);
+        if (calendarId == -1) {
+            Intent i = new Intent(getApplicationContext(), SettingsActivity.class);
+            startActivity(i);
+        }
+
+        List<Record> data = getOccurencesInMonth(calendarId);
+        ProcessData(data);
+    }
+
+    private ArrayList<Record> getOccurencesInMonth(long calId) {
+        ArrayList<Record> records = new ArrayList();
+
+        int month = Calendar.getInstance().get(Calendar.MONTH);
+        int year = Calendar.getInstance().get(Calendar.YEAR);
+
+        Calendar cFrom = Calendar.getInstance();
+        cFrom.set(Calendar.MONTH, month);
+        cFrom.set(Calendar.YEAR, year);
+        cFrom.set(Calendar.DAY_OF_MONTH, 1);
+        cFrom.set(Calendar.HOUR_OF_DAY, 0);
+        cFrom.set(Calendar.MINUTE, 0);
+        cFrom.set(Calendar.SECOND, 0);
+        cFrom.set(Calendar.MILLISECOND, 0);
+
+        Calendar cTo = Calendar.getInstance();
+        cTo.set(Calendar.MONTH, month);
+        cTo.set(Calendar.YEAR, year);
+        cTo.set(Calendar.DAY_OF_MONTH, cFrom.getActualMaximum(Calendar.DAY_OF_MONTH));
+        cTo.set(Calendar.HOUR_OF_DAY, 23);
+        cTo.set(Calendar.MINUTE, 59);
+        cTo.set(Calendar.SECOND, 59);
+        cTo.set(Calendar.MILLISECOND, 999);
+
+        Uri.Builder eventsUriBuilder = CalendarContract.Instances.CONTENT_URI.buildUpon();
+        ContentUris.appendId(eventsUriBuilder, Long.MIN_VALUE);
+        ContentUris.appendId(eventsUriBuilder, Long.MAX_VALUE);
+
+        Uri eventsUri = eventsUriBuilder.build();
+        Cursor cursor = getContentResolver().query(
+                eventsUri,
+                new String[]{CalendarContract.Instances.CALENDAR_ID, CalendarContract.Instances.TITLE,
+                        CalendarContract.Instances.DESCRIPTION, CalendarContract.Instances.BEGIN,
+                        CalendarContract.Instances.END, CalendarContract.Instances.EVENT_LOCATION,
+                        CalendarContract.Instances.EVENT_ID},
+                CalendarContract.Instances.BEGIN + " >= " + cFrom.getTimeInMillis() + " and " + CalendarContract.Instances.BEGIN
+                        + " <= " + cTo.getTimeInMillis() + " and " + CalendarContract.Instances.CALENDAR_ID + " = " + calId,
+                null,
+                CalendarContract.Instances.BEGIN + " ASC");
+
+        Log.i(TAG, "Count total: " + cursor.getCount());
+        if (cursor.moveToFirst()) {
+            do {
+                String title = cursor.getString(1);
+                String desc = cursor.getString(2);
+                long begin = cursor.getLong(3);
+
+                Calendar c = Calendar.getInstance();
+                c.setTimeInMillis(begin);
+                int amount = Integer.parseInt(desc);
+                Record r = new Record(c.get(Calendar.DAY_OF_MONTH), amount, title);
+                records.add(r);
+                Log.i(TAG, String.format("Added record  [%d] %s - %d Kc", r.day, r.popis, r.amount));
+
+            } while (cursor.moveToNext());
+        }
+        return records;
     }
 
     private int getOccurences() {
@@ -129,8 +237,8 @@ public class MainActivity extends AppCompatActivity {
         cTo.set(Calendar.MINUTE, 59);
         cTo.set(Calendar.SECOND, 59);
 
-        Log.i("CAL", "FROM: " + cFrom.getTime().toString());
-        Log.i("CAL", "TO: " + cTo.getTime().toString());
+        Log.i(TAG, "FROM: " + cFrom.getTime().toString());
+        Log.i(TAG, "TO: " + cTo.getTime().toString());
 
         Uri.Builder eventsUriBuilder = CalendarContract.Instances.CONTENT_URI.buildUpon();
         ContentUris.appendId(eventsUriBuilder, Long.MIN_VALUE);
@@ -149,13 +257,18 @@ public class MainActivity extends AppCompatActivity {
                 CalendarContract.Instances.BEGIN + " ASC");
 
         int cnt = 0;
-        return cursor.getCount();
-        /*
-        Log.i("CAL", "Count: " + cc);
+        SharedPreferences mPrefs = PreferenceManager.getDefaultSharedPreferences(this);
+        long calendarId = mPrefs.getLong(PREFS_KEY_CALENDAR_ID, -1);
+        String calendarName = mPrefs.getString(PREFS_KEY_CALENDAR_NAME, "");
+
+        Log.i(TAG, "Count total: " + cursor.getCount());
+        Log.i(TAG, String.format("Excluded calendar [%d]: %s", calendarId, calendarName));
         if (cursor.moveToFirst()) {
             do {
-                cnt += 1;
-
+                int id = cursor.getInt(0);
+                if (calendarId != id) {
+                    cnt += 1;
+                }
                 String title = cursor.getString(1);
                 String desc = cursor.getString(2);
                 long begin = cursor.getLong(3);
@@ -166,23 +279,13 @@ public class MainActivity extends AppCompatActivity {
                 int d = c.get(Calendar.DAY_OF_MONTH);
                 int mm = c.get(Calendar.MONTH) + 1;
 
-                Log.i("CAL", String.format("%d: [%d/%d] %s - %s", cnt, mm, d, title, desc, c.toString()));
-
-
+                Log.i(TAG, String.format("[%d]: [%d/%d] %s - %s", id, mm, d, title, desc, c.toString()));
             } while (cursor.moveToNext());
         }
         return cnt;
-        */
     }
 
     public void ProcessData(List<Record> result) {
-
-        /*ListView listView = (ListView) findViewById(R.id.mainListView);
-        RecordAdapter adapter = new RecordAdapter(this, result);
-        listView.setAdapter(adapter);
-        //listView.setOnItemClickListener(this);
-*/
-
         resultData = result;
         Calendar c = Calendar.getInstance();
         int today = c.get(Calendar.DAY_OF_MONTH);
@@ -286,7 +389,5 @@ public class MainActivity extends AppCompatActivity {
         tr.addView(t);
 
         tableLayout.addView(tr);
-        //((TextView) findViewById(R.id.amountTotal)).setText(Integer.toString(suma));
-
     }
 }

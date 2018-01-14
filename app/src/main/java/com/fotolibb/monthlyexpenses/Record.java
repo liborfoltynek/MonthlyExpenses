@@ -17,4 +17,10 @@ public class Record {
         popis = jsonEventData.getString("popis");
         amount = jsonEventData.getInt("castka");
     }
+
+    public Record(int day, int amount, String popis) {
+        this.day = day;
+        this.amount = amount;
+        this.popis = popis;
+    }
 }
