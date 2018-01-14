@@ -25,6 +25,7 @@ import android.widget.SeekBar;
 import android.widget.TableLayout;
 import android.widget.TableRow;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -109,7 +110,6 @@ public class MainActivity extends AppCompatActivity {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR}, 5554);
         } else {
-            initialized = true;
             showData();
         }
     }
@@ -122,18 +122,13 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode,
-                                           String permissions[], int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
         switch (requestCode) {
             case 5554: {
-                // If request is cancelled, the result arrays are empty.
                 if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    initialized = true;
                     showData();
                 } else {
-                    // permission denied, boo! Disable the
-                    // functionality that depends on this permission.
-
+                    Toast.makeText(getApplicationContext(), "Bez přístupu ke kalendáři nelze poktačovat.", Toast.LENGTH_LONG).show();
                 }
                 return;
             }
@@ -142,44 +137,37 @@ public class MainActivity extends AppCompatActivity {
 
 
     private void showData() {
-        //String url = getResources().getString(R.string.url_data);
-        //new RecordDownloaderAsync(url, this).execute();
-
         SharedPreferences mPrefs = PreferenceManager.getDefaultSharedPreferences(this);
-        String calendarName = mPrefs.getString(PREFS_KEY_CALENDAR_NAME, "");
         long calendarId = mPrefs.getLong(PREFS_KEY_CALENDAR_ID, -1);
         if (calendarId == -1) {
             Intent i = new Intent(getApplicationContext(), SettingsActivity.class);
             startActivity(i);
         }
 
-        List<Record> data = getOccurencesInMonth(calendarId);
+        List<Record> data = getOccurencesInThisMonth(calendarId);
         ProcessData(data);
+        initialized = true;
     }
 
-    private ArrayList<Record> getOccurencesInMonth(long calId) {
+    private ArrayList<Record> getOccurencesInThisMonth(long calId) {
         ArrayList<Record> records = new ArrayList();
 
-        int month = Calendar.getInstance().get(Calendar.MONTH);
-        int year = Calendar.getInstance().get(Calendar.YEAR);
 
         Calendar cFrom = Calendar.getInstance();
-        cFrom.set(Calendar.MONTH, month);
-        cFrom.set(Calendar.YEAR, year);
-        cFrom.set(Calendar.DAY_OF_MONTH, 1);
+        if (cFrom.get(Calendar.DAY_OF_MONTH) < paymentDay) {
+            cFrom.add(Calendar.MONTH, -1);
+        }
+        cFrom.set(Calendar.DAY_OF_MONTH, paymentDay);
         cFrom.set(Calendar.HOUR_OF_DAY, 0);
         cFrom.set(Calendar.MINUTE, 0);
         cFrom.set(Calendar.SECOND, 0);
         cFrom.set(Calendar.MILLISECOND, 0);
 
-        Calendar cTo = Calendar.getInstance();
-        cTo.set(Calendar.MONTH, month);
-        cTo.set(Calendar.YEAR, year);
-        cTo.set(Calendar.DAY_OF_MONTH, cFrom.getActualMaximum(Calendar.DAY_OF_MONTH));
-        cTo.set(Calendar.HOUR_OF_DAY, 23);
-        cTo.set(Calendar.MINUTE, 59);
-        cTo.set(Calendar.SECOND, 59);
-        cTo.set(Calendar.MILLISECOND, 999);
+        Calendar cTo = (Calendar) cFrom.clone();
+        cTo.add(Calendar.MONTH, 1);
+
+        logCalendar(cFrom);
+        logCalendar(cTo);
 
         Uri.Builder eventsUriBuilder = CalendarContract.Instances.CONTENT_URI.buildUpon();
         ContentUris.appendId(eventsUriBuilder, Long.MIN_VALUE);
@@ -206,14 +194,40 @@ public class MainActivity extends AppCompatActivity {
 
                 Calendar c = Calendar.getInstance();
                 c.setTimeInMillis(begin);
-                int amount = Integer.parseInt(desc);
-                Record r = new Record(c.get(Calendar.DAY_OF_MONTH), amount, title);
-                records.add(r);
-                Log.i(TAG, String.format("Added record  [%d] %s - %d Kc", r.day, r.popis, r.amount));
+                int day = c.get(Calendar.DAY_OF_MONTH);
+                int today = Calendar.getInstance().get(Calendar.DAY_OF_MONTH);
+
+                if ((desc.toCharArray()[0] != '*') || (desc.toCharArray()[0] == '*' && (today >= 10 && today < 16))) {
+                    int amount = getAmount(desc);
+                    Record r = new Record(day, amount, title);
+                    records.add(r);
+                    Log.i(TAG, String.format("Added record  [%d] %s - %d Kc", r.day, r.popis, r.amount));
+                }
 
             } while (cursor.moveToNext());
         }
         return records;
+    }
+
+    private int getAmount(String desc) {
+        int amount = 0;
+        try {
+            if (desc.length() > 0) {
+                if (desc.toCharArray()[0] == '*') {
+                    amount = Integer.parseInt(desc.substring(1));
+                } else {
+                    amount = Integer.parseInt(desc);
+                }
+            }
+        } catch (Exception ex) {
+            Log.e(TAG, ex.getMessage());
+        }
+        return amount;
+    }
+
+    private void logCalendar(Calendar c) {
+        String cs = String.format("%d.%d.%d - [%d:%d]", c.get(Calendar.DAY_OF_MONTH), c.get(Calendar.MONTH) + 1, c.get(Calendar.YEAR), c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE));
+        Log.i(TAG, cs);
     }
 
     private int getOccurences() {
@@ -227,15 +241,17 @@ public class MainActivity extends AppCompatActivity {
         cFrom.set(Calendar.HOUR_OF_DAY, 0);
         cFrom.set(Calendar.MINUTE, 0);
         cFrom.set(Calendar.SECOND, 0);
+        cFrom.set(Calendar.MILLISECOND, 0);
 
-        Calendar cTo = Calendar.getInstance();
-        if (cNow.get(Calendar.DAY_OF_MONTH) < paymentDay) {
-            cTo.add(Calendar.MONTH, -1);
-        }
+        Calendar cTo = (Calendar) cFrom.clone();
+        cTo.add(Calendar.MONTH, 1);
+        /*
         cTo.set(Calendar.DAY_OF_MONTH, cFrom.getActualMaximum(Calendar.DAY_OF_MONTH));
         cTo.set(Calendar.HOUR_OF_DAY, 23);
         cTo.set(Calendar.MINUTE, 59);
         cTo.set(Calendar.SECOND, 59);
+        cTo.set(Calendar.MILLISECOND, 999);
+        */
 
         Log.i(TAG, "FROM: " + cFrom.getTime().toString());
         Log.i(TAG, "TO: " + cTo.getTime().toString());
@@ -252,7 +268,7 @@ public class MainActivity extends AppCompatActivity {
                         CalendarContract.Instances.END, CalendarContract.Instances.EVENT_LOCATION,
                         CalendarContract.Instances.EVENT_ID},
                 CalendarContract.Instances.BEGIN + " >= " + cFrom.getTimeInMillis() + " and " + CalendarContract.Instances.BEGIN
-                        + " <= " + cTo.getTimeInMillis() + " and " + CalendarContract.Instances.VISIBLE + " = 1" + " and " + CalendarContract.Instances.TITLE + " like '%Posilovna%'",
+                        + " < " + cTo.getTimeInMillis() + " and " + CalendarContract.Instances.TITLE + " like '%Posilovna%'",
                 null,
                 CalendarContract.Instances.BEGIN + " ASC");
 
